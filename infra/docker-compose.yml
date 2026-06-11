@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: clipper
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  garage:
+    image: dxflrs/garage:latest
+    ports:
+      - "3900:3900"
+      - "3901:3901"
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garagedata:/var/lib/garage/data
+      - garagemeta:/var/lib/garage/meta
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3900/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2-alpine
+    command: -js
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  temporal:
+    image: temporalio/auto-setup:1.26
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: temporal
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal-admin:
+    image: temporalio/admin-tools:1.26
+    depends_on:
+      - temporal
+
+volumes:
+  pgdata:
+  garagedata:
+  garagemeta:

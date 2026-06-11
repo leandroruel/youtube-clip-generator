@@ -1,0 +1,24 @@
+{
+  "name": "video-clipper-generator",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "db:generate": "pnpm -F @clipper/db generate",
+    "db:migrate": "pnpm -F @clipper/db migrate",
+    "db:studio": "pnpm -F @clipper/db studio",
+    "format": "prettier --write \"**/*.{ts,tsx,json}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.5.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.7.0"
+}
