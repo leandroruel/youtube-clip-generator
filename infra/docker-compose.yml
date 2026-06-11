@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: pgvector/pgvector:0.8.0-pg17
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -26,19 +26,150 @@ services:
       retries: 5
 
   garage:
-    image: dxflrs/garage:latest
+    image: dxflrs/garage:v2.3.0
     ports:
       - "3900:3900"
       - "3901:3901"
+      - "3902:3902"
+      - "3903:3903"
     volumes:
       - ./garage.toml:/etc/garage.toml:ro
       - garagedata:/var/lib/garage/data
       - garagemeta:/var/lib/garage/meta
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3900/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      garage:
+        condition: service_started
+
+  youtube-downloader:
+    build:
+      context: ..
+      dockerfile: workers/youtube-downloader/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      garage:
+        condition: service_started
+
+  speech-to-text:
+    build:
+      context: ..
+      dockerfile: workers/speech-to-text/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+  clip-analyzer:
+    build:
+      context: ..
+      dockerfile: workers/clip-analyzer/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
+  face-tracking:
+    build:
+      context: ..
+      dockerfile: workers/face-tracking/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      garage:
+        condition: service_started
+
+  subtitle-generator:
+    build:
+      context: ..
+      dockerfile: workers/subtitle-generator/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      garage:
+        condition: service_started
+
+  renderer:
+    build:
+      context: ..
+      dockerfile: workers/renderer/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      garage:
+        condition: service_started
 
   nats:
     image: nats:2-alpine

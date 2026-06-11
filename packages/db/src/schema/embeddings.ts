@@ -1,6 +1,6 @@
 import { pgTable, uuid, varchar, vector, timestamp, index } from 'drizzle-orm/pg-core';
-import { clips } from './clips.js';
-import { transcripts } from './transcripts.js';
+import { clips } from './clips';
+import { transcripts } from './transcripts';
 
 export const embeddings = pgTable('embeddings', {
   id: uuid('id').primaryKey().defaultRandom(),

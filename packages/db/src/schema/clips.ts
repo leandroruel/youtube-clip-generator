@@ -1,6 +1,6 @@
 import { pgTable, uuid, varchar, jsonb, integer, timestamp, index } from 'drizzle-orm/pg-core';
-import { videos } from './videos.js';
-import { projects } from './projects.js';
+import { videos } from './videos';
+import { projects } from './projects';
 
 export const clips = pgTable('clips', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -10,6 +10,7 @@ export const clips = pgTable('clips', {
   endTime: integer('end_time').notNull(),
   text: varchar('text'),
   viralScore: jsonb('viral_score'),
+  cropParams: jsonb('crop_params'),
   rank: integer('rank'),
   status: varchar('status', { length: 50 }).notNull().default('draft'),
   outputPath: varchar('output_path', { length: 512 }),

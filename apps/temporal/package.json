@@ -10,13 +10,14 @@
   },
   "dependencies": {
     "@clipper/db": "workspace:*",
+    "@clipper/logger": "workspace:*",
     "@clipper/shared": "workspace:*",
-    "dotenv": "^16.4.0",
-    "temporalio": "^1.9.0"
+    "dotenv": "16.6.1",
+    "temporalio": "1.9.3"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "@types/node": "22.19.21",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3"
   }
 }

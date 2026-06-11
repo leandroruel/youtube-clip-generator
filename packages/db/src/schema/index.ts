@@ -1,8 +1,8 @@
-export { users } from './users.js';
-export { projects } from './projects.js';
-export { videos } from './videos.js';
-export { transcripts } from './transcripts.js';
-export { clips } from './clips.js';
-export { jobs } from './jobs.js';
-export { renders } from './renders.js';
-export { embeddings } from './embeddings.js';
+export { users } from './users';
+export { projects } from './projects';
+export { videos } from './videos';
+export { transcripts } from './transcripts';
+export { clips } from './clips';
+export { jobs } from './jobs';
+export { renders } from './renders';
+export { embeddings } from './embeddings';

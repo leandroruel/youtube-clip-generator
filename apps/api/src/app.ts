@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
+import authPlugin from './plugins/auth.js';
 import { env } from './config/env.js';
 import { projectsRoutes } from './routes/projects.js';
 import { videosRoutes } from './routes/videos.js';
@@ -33,6 +34,8 @@ export async function buildApp() {
   await app.register(fastifySwaggerUi, {
     routePrefix: '/docs',
   });
+
+  await app.register(authPlugin);
 
   await app.register(projectsRoutes, { prefix: '/v1/projects' });
   await app.register(videosRoutes, { prefix: '/v1/videos' });

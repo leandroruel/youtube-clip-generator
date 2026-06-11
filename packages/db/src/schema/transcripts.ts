@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
-import { videos } from './videos.js';
+import { videos } from './videos';
 
 export const transcripts = pgTable('transcripts', {
   id: uuid('id').primaryKey().defaultRandom(),

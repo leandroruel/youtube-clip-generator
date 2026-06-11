@@ -13,7 +13,7 @@ async function authPlugin(fastify: FastifyInstance) {
 
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     if (env.NODE_ENV === 'development' && !request.headers.authorization) {
-      request.userId = 'dev-user-id';
+      request.userId = '00000000-0000-0000-0000-000000000001';
       return;
     }
 
