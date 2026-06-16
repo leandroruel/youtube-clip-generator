@@ -77,4 +77,20 @@ describe('generateAssContent', () => {
       expect(ass).not.toContain('\\fscx(');
     }
   });
+
+  it('includes \\pos tag for non-move animations', () => {
+    const ass = generateAssContent({
+      segments,
+      style: { fontSize: 48, fontFamily: 'Arial', fontColor: '#FFFFFF', backgroundColor: '#000000', position: 'bottom', animation: 'fade', outlineColor: '#000000', outlineWidth: 2 },
+    });
+    expect(ass).toContain('\\pos(');
+  });
+
+  it('omits \\pos tag for move-based animations', () => {
+    const ass = generateAssContent({
+      segments,
+      style: { fontSize: 48, fontFamily: 'Arial', fontColor: '#FFFFFF', backgroundColor: '#000000', position: 'bottom', animation: 'bounce', outlineColor: '#000000', outlineWidth: 2 },
+    });
+    expect(ass).not.toContain('\\pos(');
+  });
 });
