@@ -135,6 +135,10 @@ export function generateAssContent(params: AssGenerationParams): string {
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ];
 
+  const posY = style.position === CaptionPosition.TOP ? marginV
+    : style.position === CaptionPosition.MIDDLE ? Math.round(h / 2)
+    : h - marginV;
+
   for (const seg of params.segments) {
     const startFormatted = formatAssTime(seg.start);
     const endFormatted = formatAssTime(seg.end);
@@ -146,7 +150,11 @@ export function generateAssContent(params: AssGenerationParams): string {
     const animTags = buildAnimationTags(style.animation, durationMs, style.position, x, y, w, h);
     const text = seg.text.replace(/\{/g, '\\{').replace(/\}/g, '\\}');
 
-    lines.push(`Dialogue: 0,${startFormatted},${endFormatted},Caption,,0,0,0,,${animTags}${text}`);
+    const hasMove = ['bounce', 'slide_up', 'slide_left'].includes(style.animation);
+    const posTag = hasMove ? '' : `{\\pos(${Math.round(w / 2)},${posY})}`;
+    const animTag = style.animation === 'none' ? '' : animTags;
+
+    lines.push(`Dialogue: 0,${startFormatted},${endFormatted},Caption,,0,0,0,,${posTag}${animTag}${text}`);
   }
 
   return lines.join('\n');

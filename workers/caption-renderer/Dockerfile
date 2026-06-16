@@ -1,5 +1,5 @@
 FROM node:22-alpine AS base
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg fontconfig font-dejavu
 RUN corepack enable && corepack prepare pnpm --activate
 
 FROM base AS deps
