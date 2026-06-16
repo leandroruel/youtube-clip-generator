@@ -10,7 +10,7 @@ export const config = {
   GARAGE_ACCESS_KEY: process.env.GARAGE_ACCESS_KEY ?? 'admin',
   GARAGE_SECRET_KEY: process.env.GARAGE_SECRET_KEY ?? 'admin',
   GARAGE_BUCKET: process.env.GARAGE_BUCKET ?? 'clipper',
-  WHISPER_MODEL: process.env.WHISPER_MODEL ?? 'ggml-large-v3.bin',
+  WHISPER_MODEL: process.env.WHISPER_MODEL ?? 'ggml-base.en.bin',
   WHISPER_MODEL_DIR: process.env.WHISPER_MODEL_DIR ?? '/tmp/whisper-models',
   WHISPER_BIN: process.env.WHISPER_BIN ?? 'whisper-cli',
   DOWNLOAD_DIR: process.env.DOWNLOAD_DIR ?? '/tmp/clipper-transcribe',

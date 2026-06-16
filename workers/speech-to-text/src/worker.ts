@@ -117,7 +117,7 @@ export async function handleMessage(
       videoId: payload.videoId,
       fullText: result.fullText,
       segments: result.segments,
-      model: 'whisper-large-v3',
+      model: result.modelName,
       language: result.language,
     }).returning();
 
