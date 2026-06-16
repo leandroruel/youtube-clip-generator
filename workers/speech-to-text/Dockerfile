@@ -13,10 +13,13 @@ FROM node:22-alpine AS whisper-builder
 RUN apk add --no-cache git cmake make g++ linux-headers
 RUN git clone --depth 1 --branch v1.8.6 https://github.com/ggml-org/whisper.cpp /whisper
 WORKDIR /whisper
-RUN cmake -B build && cmake --build build --config Release -j$(nproc) --target whisper-cli
+RUN cmake -B build -DBUILD_SHARED_LIBS=OFF && \
+    cmake --build build --config Release -j$(nproc) --target whisper-cli
 
 FROM deps AS runner
 WORKDIR /app
 COPY --from=whisper-builder /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
+RUN /usr/local/bin/whisper-cli --help > /dev/null 2>&1 && echo "whisper-cli OK"
+RUN mkdir -p /tmp/whisper-models
 COPY . .
 CMD ["npx", "tsx", "workers/speech-to-text/src/index.ts"]
