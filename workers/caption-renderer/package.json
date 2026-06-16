@@ -1,0 +1,33 @@
+{
+  "name": "@clipper/worker-caption-renderer",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1066.0",
+    "@aws-sdk/lib-storage": "3.1066.0",
+    "@clipper/db": "workspace:*",
+    "@clipper/logger": "workspace:*",
+    "@clipper/queue": "workspace:*",
+    "@clipper/shared": "workspace:*",
+    "@clipper/storage": "workspace:*",
+    "dotenv": "16.6.1",
+    "drizzle-orm": "0.40.1",
+    "nats": "2.29.3",
+    "postgres": "3.4.9",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.21",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3",
+    "vitest": "3.2.6"
+  }
+}

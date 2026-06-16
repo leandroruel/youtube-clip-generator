@@ -4,6 +4,7 @@ export const JobType = {
   CLIP_ANALYSIS: 'clip_analysis',
   FACE_TRACKING: 'face_tracking',
   SUBTITLE_GENERATION: 'subtitle_generation',
+  CAPTION_RENDER: 'caption_render',
   RENDER: 'render',
 } as const;
 

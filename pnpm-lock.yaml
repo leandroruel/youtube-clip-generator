@@ -183,6 +183,58 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  workers/caption-renderer:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1066.0
+        version: 3.1066.0
+      '@aws-sdk/lib-storage':
+        specifier: 3.1066.0
+        version: 3.1066.0(@aws-sdk/client-s3@3.1066.0)
+      '@clipper/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@clipper/logger':
+        specifier: workspace:*
+        version: link:../../packages/logger
+      '@clipper/queue':
+        specifier: workspace:*
+        version: link:../../packages/queue
+      '@clipper/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@clipper/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
+      dotenv:
+        specifier: 16.6.1
+        version: 16.6.1
+      drizzle-orm:
+        specifier: 0.40.1
+        version: 0.40.1(@opentelemetry/api@1.9.1)(gel@2.2.0)(postgres@3.4.9)
+      nats:
+        specifier: 2.29.3
+        version: 2.29.3
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 22.19.21
+        version: 22.19.21
+      tsx:
+        specifier: 4.22.4
+        version: 4.22.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.6
+        version: 3.2.6(@types/node@22.19.21)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)
+
   workers/clip-analyzer:
     dependencies:
       '@clipper/db':

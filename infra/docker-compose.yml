@@ -151,6 +151,26 @@ services:
       garage:
         condition: service_started
 
+  caption-renderer:
+    build:
+      context: ..
+      dockerfile: workers/caption-renderer/Dockerfile
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/clipper
+      NATS_URL: nats://nats:4222
+      GARAGE_ENDPOINT: http://garage:3900
+      GARAGE_REGION: garage
+      GARAGE_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_BUCKET: ${GARAGE_BUCKET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      garage:
+        condition: service_started
+
   renderer:
     build:
       context: ..
