@@ -19,9 +19,6 @@ export interface AssGenerationParams {
   videoHeight?: number;
 }
 
-const WIDTH = 1920;
-const HEIGHT = 1080;
-
 function hexToAssColor(hex: string): string {
   const clean = hex.replace('#', '');
   const r = clean.slice(0, 2);
@@ -68,6 +65,8 @@ function buildAnimationTags(
   pos: string,
   x: number,
   y: number,
+  videoW: number,
+  videoH: number,
 ): string {
   switch (anim) {
     case 'fade':
@@ -75,18 +74,17 @@ function buildAnimationTags(
 
     case 'bounce': {
       const startY = y + 40;
-      const peakY = y - 20;
       const settleMs = Math.min(durationMs * 0.15, 300);
       return `{\\move(${x},${startY},${x},${y},0,${Math.round(settleMs)})}`;
     }
 
     case 'slide_up': {
-      const startY = HEIGHT + 60;
+      const startY = videoH + 60;
       return `{\\move(${x},${startY},${x},${y},0,${Math.round(durationMs * 0.15)})}`;
     }
 
     case 'slide_left': {
-      const startX = WIDTH + 60;
+      const startX = videoW + 60;
       return `{\\move(${startX},${y},${x},${y},0,${Math.round(durationMs * 0.15)})}`;
     }
 
@@ -111,8 +109,8 @@ function buildAnimationTags(
 
 export function generateAssContent(params: AssGenerationParams): string {
   const style = { ...defaultCaptionStyle, ...params.style };
-  const w = params.videoWidth ?? WIDTH;
-  const h = params.videoHeight ?? HEIGHT;
+  const w = params.videoWidth ?? 1920;
+  const h = params.videoHeight ?? 1080;
 
   const fontColorAss = hexToAssColor(style.fontColor);
   const outlineColorAss = hexToAssColor(style.outlineColor ?? '#000000');
@@ -145,7 +143,7 @@ export function generateAssContent(params: AssGenerationParams): string {
     const x = Math.round(w / 2);
     const y = Math.round(h / 2);
 
-    const animTags = buildAnimationTags(style.animation, durationMs, style.position, x, y);
+    const animTags = buildAnimationTags(style.animation, durationMs, style.position, x, y, w, h);
     const text = seg.text.replace(/\{/g, '\\{').replace(/\}/g, '\\}');
 
     lines.push(`Dialogue: 0,${startFormatted},${endFormatted},Caption,,0,0,0,,${animTags}${text}`);
@@ -154,7 +152,13 @@ export function generateAssContent(params: AssGenerationParams): string {
   return lines.join('\n');
 }
 
-export function writeAssFile(segments: CaptionSegment[], style: CaptionStyle, filePath: string): void {
-  const content = generateAssContent({ segments, style });
+export function writeAssFile(
+  segments: CaptionSegment[],
+  style: CaptionStyle,
+  filePath: string,
+  videoWidth?: number,
+  videoHeight?: number,
+): void {
+  const content = generateAssContent({ segments, style, videoWidth, videoHeight });
   writeFileSync(filePath, content, 'utf-8');
 }

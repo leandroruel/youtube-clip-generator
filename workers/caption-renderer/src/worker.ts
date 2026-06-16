@@ -123,12 +123,6 @@ export async function handleMessage(
 
     const style: CaptionStyle = { ...defaultCaptionStyle, ...payload.captionStyle };
 
-    assPath = `${config.DOWNLOAD_DIR}/${payload.clipId}.ass`;
-    writeAssFile(clipSegments, style, assPath);
-
-    const assKey = `captions/${payload.clipId}.ass`;
-    await uploadStream(s3, bucket, assKey, createReadStream(assPath), 'text/plain');
-
     const [video] = await db.select()
       .from(videos)
       .where(eq(videos.id, clip.videoId));
@@ -143,6 +137,14 @@ export async function handleMessage(
     if (!bodyStream) throw new Error('Empty response body from S3');
 
     await pipeline(bodyStream, createWriteStream(inputPath));
+
+    const { width, height } = getVideoDimensions(inputPath);
+
+    assPath = `${config.DOWNLOAD_DIR}/${payload.clipId}.ass`;
+    writeAssFile(clipSegments, style, assPath, width, height);
+
+    const assKey = `captions/${payload.clipId}.ass`;
+    await uploadStream(s3, bucket, assKey, createReadStream(assPath), 'text/plain');
 
     execSync(
       `ffmpeg -y ` +
@@ -195,4 +197,14 @@ export async function handleMessage(
 
 function removeFile(p: string) {
   try { execSync(`rm -f "${p}"`, { stdio: 'ignore' }); } catch { }
+}
+
+function getVideoDimensions(videoPath: string): { width: number; height: number } {
+  const output = execSync(
+    `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${videoPath}"`,
+    { encoding: 'utf-8', timeout: 15_000 },
+  );
+  const [w, h] = output.trim().split(',').map(Number);
+  if (!w || !h) throw new Error('Could not determine video dimensions');
+  return { width: w, height: h };
 }
