@@ -18,6 +18,7 @@ export interface Video {
   source: string;
   sourceUrl: string | null;
   thumbnailPath: string | null;
+  proxyPath: string | null;
   duration: number | null;
   status: string;
   audioPath: string | null;
@@ -74,6 +75,16 @@ async function apiFetch<T>(
   return res.json();
 }
 
+export function getStreamUrl(videoId: string): string {
+  const base = import.meta.env.VITE_API_URL || "http://localhost:3000";
+  return `${base}/v1/videos/${videoId}/stream`;
+}
+
+export function getClipStreamUrl(clipId: string): string {
+  const base = import.meta.env.VITE_API_URL || "http://localhost:3000";
+  return `${base}/v1/clips/${clipId}/stream`;
+}
+
 export const api = {
   projects: {
     list: () =>
@@ -98,6 +109,11 @@ export const api = {
     get: (id: string) => apiFetch<Clip>(`/v1/clips/${id}`),
     delete: (id: string) =>
       apiFetch<void>(`/v1/clips/${id}`, { method: "DELETE" }),
+    bulkDelete: (ids: string[]) =>
+      apiFetch<{ deleted: number }>("/v1/clips/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
   },
   videos: {
     list: () =>
@@ -106,7 +122,7 @@ export const api = {
     delete: (id: string) =>
       apiFetch<void>(`/v1/videos/${id}`, { method: "DELETE" }),
     submitYoutube: (projectId: string, youtubeUrl: string) =>
-      apiFetch<{ jobId: string; message: string }>("/v1/videos/youtube", {
+      apiFetch<{ jobId: string; videoId: string; message: string }>("/v1/videos/youtube", {
         method: "POST",
         body: JSON.stringify({ projectId, youtubeUrl }),
       }),

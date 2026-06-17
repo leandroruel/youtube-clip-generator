@@ -49,6 +49,10 @@ function mockS3() {
   return { send: vi.fn() } as never;
 }
 
+function mockJs() {
+  return { publish: vi.fn() } as never;
+}
+
 function mockNatsMsg(overrides?: Partial<NatsMsg>): NatsMsg {
   return {
     ack: vi.fn(),
@@ -56,6 +60,7 @@ function mockNatsMsg(overrides?: Partial<NatsMsg>): NatsMsg {
     data: new TextEncoder().encode(JSON.stringify({
       jobId: 'job-1',
       projectId: 'proj-1',
+      videoId: 'video-1',
       youtubeUrl: 'https://youtube.com/watch?v=abc123',
     })),
     ...overrides,
@@ -97,7 +102,8 @@ describe('handleMessage', () => {
         },
       });
 
-      await handleMessage(msg, db, s3, bucket, logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, bucket, js, logger);
 
       expect(db.update).toHaveBeenCalled();
       expect(db.insert).toHaveBeenCalled();
@@ -118,7 +124,8 @@ describe('handleMessage', () => {
       mockGetYouTubeMetadata.mockReturnValue({ id: 'a', title: 'T', duration: 10, thumbnail: '' });
       mockDownloadAudio.mockReturnValue({ filePath: '/tmp/a.opus', metadata: { id: 'a', title: 'T', duration: 10, thumbnail: '' } });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(mockGetYouTubeMetadata).toHaveBeenCalledWith('https://example.com/video');
     });
@@ -132,7 +139,8 @@ describe('handleMessage', () => {
       mockGetYouTubeMetadata.mockReturnValue({ id: 'a', title: 'T', duration: 10, thumbnail: '' });
       mockDownloadAudio.mockReturnValue({ filePath: '/tmp/a.opus', metadata: { id: 'a', title: 'T', duration: 10, thumbnail: '' } });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(db.update).toHaveBeenCalled();
     });
@@ -146,7 +154,8 @@ describe('handleMessage', () => {
       mockGetYouTubeMetadata.mockReturnValue({ id: 'a', title: 'My Podcast', duration: 7200, thumbnail: 'https://example.com/thumb.jpg' });
       mockDownloadAudio.mockReturnValue({ filePath: '/tmp/a.opus', metadata: { id: 'a', title: 'My Podcast', duration: 7200, thumbnail: 'https://example.com/thumb.jpg' } });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(db.insert).toHaveBeenCalled();
     });
@@ -163,7 +172,8 @@ describe('handleMessage', () => {
         throw new Error('Invalid YouTube URL');
       });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(db.update).toHaveBeenCalled();
       expect(msg.term).toHaveBeenCalled();
@@ -183,7 +193,8 @@ describe('handleMessage', () => {
       mockGetYouTubeMetadata.mockReturnValue({ id: 'a', title: 'T', duration: 10, thumbnail: '' });
       mockDownloadAudio.mockReturnValue({ filePath: '/tmp/a.opus', metadata: { id: 'a', title: 'T', duration: 10, thumbnail: '' } });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(msg.term).toHaveBeenCalled();
       expect(msg.ack).not.toHaveBeenCalled();
@@ -200,7 +211,8 @@ describe('handleMessage', () => {
       mockGetYouTubeMetadata.mockReturnValue({ id: 'a', title: 'T', duration: 10, thumbnail: '' });
       mockDownloadAudio.mockReturnValue({ filePath: '/tmp/a.opus', metadata: { id: 'a', title: 'T', duration: 10, thumbnail: '' } });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(mockCleanupAudio).toHaveBeenCalledWith('/tmp/a.opus');
       expect(msg.term).toHaveBeenCalled();
@@ -217,7 +229,8 @@ describe('handleMessage', () => {
         throw new Error('Network error');
       });
 
-      await handleMessage(msg, db, s3, 'clipper', logger);
+      const js = mockJs();
+      await handleMessage(msg, db, s3, 'clipper', js, logger);
 
       expect(msg.term).toHaveBeenCalled();
       expect(msg.ack).not.toHaveBeenCalled();

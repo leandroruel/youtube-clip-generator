@@ -52,8 +52,17 @@ export async function getObject(
   client: S3Client,
   bucket: string,
   key: string,
+  range?: string,
 ) {
-  const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const params: {
+    Bucket: string;
+    Key: string;
+    Range?: string;
+  } = { Bucket: bucket, Key: key };
+  if (range) {
+    params.Range = range;
+  }
+  const command = new GetObjectCommand(params);
   return client.send(command);
 }
 

@@ -117,6 +117,28 @@ export function mergeAdjacentSegments(
   return merged;
 }
 
+export function extractQuote(text: string, maxLength = 90): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+
+  // Split on sentence boundaries — keep delimiter so quotes end naturally
+  const match = trimmed.match(/^.*?[.!?]+/);
+  if (match) {
+    const sentence = match[0].trim();
+    if (sentence.length <= maxLength) return sentence;
+  }
+
+  // Truncate at word boundary
+  if (trimmed.length > maxLength) {
+    const truncated = trimmed.slice(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    if (lastSpace > 0) return truncated.slice(0, lastSpace) + '...';
+    return truncated + '...';
+  }
+
+  return trimmed;
+}
+
 export function analyzeTranscript(
   segments: TranscriptSegment[],
   options?: {
@@ -140,7 +162,7 @@ export function analyzeTranscript(
       return {
         start: segment.start,
         end: segment.end,
-        text: segment.text.trim(),
+        text: extractQuote(segment.text),
         viralScore,
         reasoning: buildReasoning(viralScore, segment),
       };

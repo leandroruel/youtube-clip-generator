@@ -9,7 +9,7 @@ import { jobs, videos } from '@clipper/db/schema';
 import { JobStatus, JobType } from '@clipper/shared';
 import type { Logger } from '@clipper/logger';
 import { config } from './config.js';
-import { downloadAudio, cleanupAudio, getYouTubeMetadata } from './downloader.js';
+import { downloadAudio, downloadVideoPreview, cleanupAudio, getYouTubeMetadata } from './downloader.js';
 
 export interface NatsMsg {
   ack: () => void;
@@ -20,6 +20,7 @@ export interface NatsMsg {
 export interface YoutubeDownloadPayload {
   jobId: string;
   projectId: string;
+  videoId: string;
   youtubeUrl: string;
 }
 
@@ -98,27 +99,50 @@ export async function handleMessage(
     logger.info({ cmd: `yt-dlp --dump-json ${payload.youtubeUrl}` }, 'Fetching metadata');
     const metadata = getYouTubeMetadata(payload.youtubeUrl);
 
-    const [video] = await db.insert(videos).values({
-      projectId: payload.projectId,
-      title: metadata.title,
-      source: 'youtube',
-      sourceUrl: payload.youtubeUrl,
-      duration: metadata.duration,
-      thumbnailPath: metadata.thumbnail,
-      status: 'downloading',
-    }).returning();
+    const [video] = await db.update(videos)
+      .set({
+        title: metadata.title,
+        duration: metadata.duration,
+        thumbnailPath: metadata.thumbnail,
+        status: 'downloading',
+        updatedAt: new Date(),
+      })
+      .where(eq(videos.id, payload.videoId))
+      .returning();
 
-    if (!video) throw new Error('Failed to create video record');
+    if (!video) throw new Error('Failed to update video record');
 
-    const result = downloadAudio(payload.youtubeUrl, metadata.id);
-    filePath = result.filePath;
+    const audioResult = downloadAudio(payload.youtubeUrl, metadata.id);
+    filePath = audioResult.filePath;
 
     const audioKey = `audio/${metadata.id}.${config.AUDIO_FORMAT}`;
+    await uploadStream(s3, bucket, audioKey, createReadStream(audioResult.filePath), 'audio/opus');
+    cleanupAudio(audioResult.filePath);
 
-    await uploadStream(s3, bucket, audioKey, createReadStream(filePath), 'audio/opus');
+    // Download video preview for face detection preview
+    let proxyKey: string | null = null;
+    try {
+      const videoResult = downloadVideoPreview(payload.youtubeUrl, metadata.id);
+      const ext = videoResult.filePath.split('.').pop() ?? 'mp4';
+      proxyKey = `videos/proxy/${metadata.id}.${ext}`;
+      const contentType = ext === 'webm' ? 'video/webm' : 'video/mp4';
+      await uploadStream(s3, bucket, proxyKey, createReadStream(videoResult.filePath), contentType);
+      cleanupAudio(videoResult.filePath);
+      logger.info({ proxyKey }, 'Video preview uploaded');
+    } catch (err) {
+      logger.warn({ err }, 'Failed to download video preview, continuing without it');
+    }
 
+    const updateFields: Record<string, unknown> = {
+      audioPath: audioKey,
+      status: 'audio_ready',
+      updatedAt: new Date(),
+    };
+    if (proxyKey) {
+      updateFields.proxyPath = proxyKey;
+    }
     await db.update(videos)
-      .set({ audioPath: audioKey, status: 'audio_ready', updatedAt: new Date() })
+      .set(updateFields)
       .where(eq(videos.id, video.id));
 
     const jobResult: YoutubeDownloadResult = {

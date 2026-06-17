@@ -93,6 +93,28 @@ export function downloadAudio(url: string, videoId: string): DownloadResult {
   return { filePath, metadata: getYouTubeMetadata(url) };
 }
 
+export function downloadVideoPreview(url: string, videoId: string): DownloadResult {
+  mkdirSync(config.DOWNLOAD_DIR, { recursive: true });
+
+  const outputTemplate = join(config.DOWNLOAD_DIR, `${videoId}_preview.%(ext)s`);
+
+  // Download best video up to 720p with audio, merge to mp4 for consistent format
+  const output = execSync(
+    `yt-dlp ${COMMON_FLAGS} ` +
+    `-f "best[height<=720]" ` +
+    `--merge-output-format mp4 ` +
+    `-o "${outputTemplate}" ` +
+    `--no-playlist ` +
+    `--print after_move:filepath ` +
+    `"${url}"`,
+    { ...execOptions, encoding: 'utf-8', maxBuffer: 1024 * 1024 },
+  );
+
+  const filePath = output.trim().split('\n').pop() ?? '';
+
+  return { filePath, metadata: getYouTubeMetadata(url) };
+}
+
 export function cleanupAudio(filePath: string) {
   try {
     execSync(`rm -f "${filePath}"`, { stdio: 'ignore' });

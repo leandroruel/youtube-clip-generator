@@ -228,7 +228,37 @@ services:
     depends_on:
       - temporal
 
+  loki:
+    image: grafana/loki:3.4
+    ports: ["3100:3100"]
+    volumes:
+      - lokidata:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:3.4
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./promtail.yaml:/etc/promtail/promtail.yaml
+    command: -config.file=/etc/promtail/promtail.yaml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3001:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ORG_ROLE: "Admin"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - loki
+
 volumes:
   pgdata:
   garagedata:
   garagemeta:
+  lokidata:
+  grafanadata:

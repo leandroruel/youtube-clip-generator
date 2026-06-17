@@ -1,9 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { Readable } from 'node:stream';
 import { db } from '@clipper/db/db';
 import { jobs, videos, clips, transcripts, renders, embeddings } from '@clipper/db/schema';
 import { JobType } from '@clipper/shared';
 import { subjectForJobType, createNatsConnection, ensureJobStream } from '@clipper/queue';
+import { createS3Client, getObject } from '@clipper/storage';
 import { env } from '../config/env.js';
 import { eq, inArray, and } from 'drizzle-orm';
 
@@ -18,6 +20,18 @@ const submitYoutubeSchema = z.object({
   projectId: z.string().uuid(),
   youtubeUrl: z.string().url(),
 });
+
+function extractYoutubeTitle(url: string): string {
+  try {
+    const u = new URL(url);
+    const id = u.hostname.includes('youtu.be')
+      ? u.pathname.slice(1).split('?')[0]
+      : u.searchParams.get('v');
+    return id ? `Video ${id.slice(0, 8)}` : 'New Video';
+  } catch {
+    return 'New Video';
+  }
+}
 
 export async function videosRoutes(app: FastifyInstance) {
   app.post('/', async (request, reply) => {
@@ -39,6 +53,18 @@ export async function videosRoutes(app: FastifyInstance) {
       return reply.status(500).send({ error: 'Failed to create job' });
     }
 
+    const [video] = await db.insert(videos).values({
+      projectId: body.projectId,
+      title: extractYoutubeTitle(body.youtubeUrl),
+      source: 'youtube',
+      sourceUrl: body.youtubeUrl,
+      status: 'pending',
+    }).returning();
+
+    if (!video) {
+      return reply.status(500).send({ error: 'Failed to create video record' });
+    }
+
     const nc = await createNatsConnection(env.NATS_URL);
     await ensureJobStream(nc);
     const js = nc.jetstream();
@@ -47,6 +73,7 @@ export async function videosRoutes(app: FastifyInstance) {
       JSON.stringify({
         jobId: job.id,
         projectId: body.projectId,
+        videoId: video.id,
         youtubeUrl: body.youtubeUrl,
       }),
     ));
@@ -55,6 +82,7 @@ export async function videosRoutes(app: FastifyInstance) {
     return reply.status(202).send({
       message: 'Video submitted for processing',
       jobId: job.id,
+      videoId: video.id,
     });
   });
 
@@ -70,6 +98,76 @@ export async function videosRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const allVideos = await db.select().from(videos);
     return { videos: allVideos };
+  });
+
+  app.get<{ Params: { id: string } }>('/:id/stream', async (request, reply) => {
+    const { id } = request.params;
+    const [video] = await db.select().from(videos).where(eq(videos.id, id));
+    if (!video) {
+      return reply.status(404).send({ error: 'Video not found' });
+    }
+
+    const proxyKey = video.proxyPath;
+    if (!proxyKey) {
+      return reply.status(404).send({ error: 'Video preview not available yet' });
+    }
+
+    const s3Config = {
+      endpoint: env.GARAGE_ENDPOINT,
+      region: env.GARAGE_REGION,
+      accessKeyId: env.GARAGE_ACCESS_KEY,
+      secretAccessKey: env.GARAGE_SECRET_KEY,
+      bucket: env.GARAGE_BUCKET,
+    };
+
+    const { client, bucket } = createS3Client(s3Config);
+
+    const range = request.headers.range as string | undefined;
+
+    try {
+      const s3Response = await getObject(client, bucket, proxyKey, range);
+      const contentLength = s3Response.ContentLength;
+      const contentType = s3Response.ContentType ?? 'video/mp4';
+
+      const headers: Record<string, string | number | undefined> = {
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Expose-Headers': 'Content-Range',
+      };
+
+      if (range && s3Response.ContentRange) {
+        reply.raw.writeHead(206, {
+          ...headers,
+          'Content-Range': s3Response.ContentRange,
+          'Content-Length': contentLength,
+        });
+      } else {
+        reply.raw.writeHead(200, {
+          ...headers,
+          'Content-Length': contentLength,
+        });
+      }
+
+      if (s3Response.Body) {
+        const stream = s3Response.Body as Readable;
+        await new Promise<void>((resolve, reject) => {
+          stream.pipe(reply.raw);
+          stream.on('end', resolve);
+          stream.on('error', reject);
+        });
+      } else {
+        reply.raw.end();
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      request.log.error({ err, videoId: id }, 'Failed to stream video');
+      if (!reply.raw.headersSent) {
+        reply.status(500).send({ error: 'Failed to stream video' });
+      } else {
+        reply.raw.destroy(new Error(message));
+      }
+    }
   });
 
   app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {

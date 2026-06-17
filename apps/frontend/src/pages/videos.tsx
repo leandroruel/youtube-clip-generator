@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type Clip, type Video } from "@/lib/api";
+import { api, getClipStreamUrl, type Clip } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -15,10 +16,9 @@ import {
   ChevronRight,
   Clock,
   Play,
-  Clapperboard,
   Sparkles,
   Trash2,
-  X,
+  Trash,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -53,16 +53,6 @@ const thumbGradients = [
   "from-rose-600 to-pink-800",
 ];
 
-function extractYoutubeId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes("youtu.be")) return u.pathname.slice(1).split("?")[0] || null;
-    return u.searchParams.get("v");
-  } catch {
-    return null;
-  }
-}
-
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -75,13 +65,15 @@ export function VideosPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const [deletingClipId, setDeletingClipId] = useState<string | null>(null);
-  const [playingClip, setPlayingClip] = useState<Clip | null>(null);
+  const [playingClipId, setPlayingClipId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
-  const { data: playingVideo } = useQuery({
-    queryKey: ["video", playingClip?.videoId],
-    queryFn: () => api.videos.get(playingClip!.videoId),
-    enabled: !!playingClip,
-  });
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setSelectedIds(new Set());
+    setPage(1);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: (clipId: string) => api.clips.delete(clipId),
@@ -93,6 +85,18 @@ export function VideosPage() {
     onError: () => {
       toast.error("Failed to delete clip");
       setDeletingClipId(null);
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.clips.bulkDelete(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["clips"] });
+      setSelectedIds(new Set());
+      toast.success(`${data.deleted} clips deleted`);
+    },
+    onError: () => {
+      toast.error("Failed to delete clips");
     },
   });
 
@@ -110,6 +114,25 @@ export function VideosPage() {
     page * PAGE_SIZE
   );
 
+  const allFilteredSelected = paginatedClips.length > 0 && paginatedClips.every((c) => selectedIds.has(c.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedClips.map((c) => c.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-8 p-8 pb-24">
       <div className="fade-in-up flex items-center justify-between">
@@ -119,18 +142,29 @@ export function VideosPage() {
             All your rendered captioned clips
           </p>
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-36 border-border bg-surface text-sm">
-            <SelectValue placeholder="Filter" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="processing">Processing</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-3">
+          {paginatedClips.length > 0 && (
+            <button
+              onClick={toggleSelectAll}
+              className="flex items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-white"
+            >
+              <Checkbox checked={allFilteredSelected} onCheckedChange={toggleSelectAll} />
+              Select All
+            </button>
+          )}
+          <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+            <SelectTrigger className="w-36 border-border bg-surface text-sm">
+              <SelectValue placeholder="Filter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="processing">Processing</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {isLoading ? (
@@ -156,61 +190,79 @@ export function VideosPage() {
           {paginatedClips.map((clip: Clip, i: number) => (
             <div
               key={clip.id}
-              onClick={() => setPlayingClip(clip)}
-              className="group cursor-pointer rounded-xl border border-border bg-surface transition-all duration-200 hover:-translate-y-1 hover:border-accent-violet/30 hover:shadow-xl"
+              className="relative rounded-xl border border-border bg-surface transition-all duration-200 hover:-translate-y-1 hover:border-accent-violet/30 hover:shadow-xl"
             >
               <div
+                onClick={() => setPlayingClipId(playingClipId === clip.id ? null : clip.id)}
                 className={cn(
-                  "relative flex aspect-[9/16] items-center justify-center overflow-hidden rounded-t-xl bg-gradient-to-br",
-                  thumbGradients[i % thumbGradients.length]
+                  "group relative flex aspect-[9/16] items-center justify-center overflow-hidden rounded-t-xl",
+                  playingClipId === clip.id ? "bg-black" : "cursor-pointer bg-gradient-to-br",
+                  playingClipId !== clip.id && thumbGradients[i % thumbGradients.length]
                 )}
               >
-                <div className="absolute inset-0 bg-black/20 transition-opacity group-hover:bg-black/10" />
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 group-hover:opacity-100 group-hover:scale-110">
-                  <Play className="h-6 w-6 fill-white text-white" />
+                <div
+                  className="absolute left-2 top-2 z-20 rounded-md bg-black/40 p-1.5 backdrop-blur-sm"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox checked={selectedIds.has(clip.id)} onCheckedChange={() => toggleSelect(clip.id)} />
                 </div>
-                <span className="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-1 text-xs text-white backdrop-blur-sm">
-                  {formatDuration(clip.endTime - clip.startTime)}
-                </span>
-                <Clapperboard className="absolute left-3 top-3 h-5 w-5 text-white/30" />
-                  <AlertDialog
-                    open={deletingClipId === clip.id}
-                    onOpenChange={(open) =>
-                      setDeletingClipId(open ? clip.id : null)
-                    }
-                  >
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute right-2 top-2 h-7 w-7 bg-black/20 text-white/70 opacity-0 transition-opacity hover:bg-black/40 hover:text-red-400 group-hover:opacity-100"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete clip?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will permanently delete this individual clip.
-                          The source video and other clips will not be affected.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => {
-                            setDeletingClipId(null);
-                            deleteMutation.mutate(clip.id);
-                          }}
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                {playingClipId === clip.id ? (
+                  <video
+                    src={getClipStreamUrl(clip.id)}
+                    className="h-full w-full object-contain"
+                    controls
+                    autoPlay
+                    playsInline
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <>
+                    <div className="absolute inset-0 bg-black/20 transition-opacity group-hover:bg-black/10" />
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 opacity-0 shadow-lg backdrop-blur-sm transition-all duration-200 group-hover:opacity-100 group-hover:scale-110">
+                      <Play className="h-6 w-6 fill-white text-white" />
+                    </div>
+                    <span className="absolute bottom-3 right-3 rounded-md bg-black/60 px-2 py-1 text-xs text-white backdrop-blur-sm">
+                      {formatDuration(clip.endTime - clip.startTime)}
+                    </span>
+                  </>
+                )}
               </div>
+              <AlertDialog
+                open={deletingClipId === clip.id}
+                onOpenChange={(open) =>
+                  setDeletingClipId(open ? clip.id : null)
+                }
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-2 z-10 h-7 w-7 bg-black/20 text-white/70 opacity-0 transition-opacity hover:bg-black/40 hover:text-red-400 hover:opacity-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete clip?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this individual clip.
+                      The source video and other clips will not be affected.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        setDeletingClipId(null);
+                        deleteMutation.mutate(clip.id);
+                      }}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
               <div className="p-3">
                 <p className="line-clamp-2 text-sm font-medium text-white leading-snug">
                   {clip.text || "Untitled Clip"}
@@ -265,48 +317,62 @@ export function VideosPage() {
           </Button>
         </div>
       )}
-      {playingClip && playingVideo && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-          onClick={() => setPlayingClip(null)}
-        >
-          <div
-            className="w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">{playingVideo.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDuration(playingClip.startTime)} – {formatDuration(playingClip.endTime)}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setPlayingClip(null)}
-                className="ml-2 h-8 w-8 shrink-0 text-muted-foreground hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="aspect-video w-full bg-black">
-              {playingVideo.sourceUrl ? (
-                <iframe
-                  src={`https://www.youtube.com/embed/${extractYoutubeId(playingVideo.sourceUrl)}?start=${playingClip.startTime}&end=${playingClip.endTime}&autoplay=1`}
-                  className="h-full w-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  Video source not available
-                </div>
-              )}
-            </div>
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-4 rounded-xl border border-border bg-surface px-5 py-3 shadow-2xl backdrop-blur-md">
+            <span className="text-sm text-muted-foreground">
+              {selectedIds.size} selected
+            </span>
+            <div className="h-5 w-px bg-border" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-muted-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+              className="gap-1.5 text-xs text-red-400 hover:text-red-300"
+            >
+              <Trash className="h-3.5 w-3.5" />
+              Delete
+            </Button>
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} clips?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {selectedIds.size} selected clips.
+              The source video and other clips will not be affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBulkDeleteOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setBulkDeleteOpen(false);
+                bulkDeleteMutation.mutate(Array.from(selectedIds));
+              }}
+            >
+              {bulkDeleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, getStreamUrl } from "@/lib/api";
+import { AiPreview } from "@/components/ai-preview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -12,12 +13,13 @@ import {
   Loader2,
   Smartphone,
   Monitor,
-  Film,
   Link2,
   ChevronLeft,
+  ScanFace,
+  Eye,
 } from "lucide-react";
 
-const STEP_LABELS = ["Video", "Format", "Review"];
+const STEP_LABELS = ["Video", "Formato", "Preview", "Revisão"];
 
 function extractYoutubeId(url: string): string | null {
   try {
@@ -57,16 +59,12 @@ const formats = [
 
 type FormatId = (typeof formats)[number]["id"];
 
-const verticalLayouts = [
-  { id: "auto", label: "Automático", desc: "IA detecta e enquadra automaticamente" },
-  { id: "centered", label: "Centralizado", desc: "Enquadramento fixo central" },
-  { id: "smart", label: "Inteligente", desc: "Rastreamento inteligente de rostos" },
-];
-
-const horizontalLayouts = [
-  { id: "original", label: "Original", desc: "Vídeo completo com legendas" },
-  { id: "lower-third", label: "Legendas", desc: "Legendas na parte inferior" },
-  { id: "split", label: "Dividido", desc: "Tela dividida com transcrição" },
+const framingOptions = [
+  { id: "auto", label: "Automático", desc: "Recomendado — IA enquadra automaticamente", badge: "IA" },
+  { id: "face", label: "Foco no rosto", desc: "Centraliza nos rostos detectados", badge: "IA" },
+  { id: "center", label: "Centro", desc: "Enquadramento fixo central" },
+  { id: "split", label: "Tela dividida", desc: "Divide a tela com transcrição" },
+  { id: "react", label: "Reação", desc: "Picture-in-picture com câmera" },
 ];
 
 export function CreatePage() {
@@ -79,8 +77,16 @@ export function CreatePage() {
   const [step, setStep] = useState(1);
   const [url, setUrl] = useState(initialUrl);
   const [format, setFormat] = useState<FormatId | null>(null);
-  const [layout, setLayout] = useState<string | null>(null);
+  const [framing, setFraming] = useState<string | null>(null);
+  const [faceDetectionReady, setFaceDetectionReady] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const step3Timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [, setProjectId] = useState<string | null>(null);
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+
+  const needsAiPreview = framing && ["auto", "face"].includes(framing);
   const urlError = url.trim() && !extractYoutubeId(url) ? "Invalid URL. Please enter a valid YouTube link." : null;
   const youtubeId = extractYoutubeId(url);
 
@@ -88,23 +94,64 @@ export function CreatePage() {
     mutationFn: async () => {
       const project = await api.projects.create(extractVideoTitle(url));
       const result = await api.videos.submitYoutube(project.id, url);
-      return { projectId: project.id, jobId: result.jobId };
+      return { projectId: project.id, videoId: result.videoId, jobId: result.jobId };
     },
     onSuccess: (data) => {
-      navigate(`/videos/processing/${data.jobId}`);
+      setProjectId(data.projectId);
+      setVideoId(data.videoId);
+      setJobId(data.jobId);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
+
+  const { data: video } = useQuery({
+    queryKey: ["video", videoId],
+    queryFn: () => api.videos.get(videoId!),
+    enabled: !!videoId,
+    refetchInterval: (query) => {
+      if (!query.state.data) return 2000;
+      if (query.state.data.proxyPath && query.state.data.status !== "pending") return false;
+      return 2000;
+    },
+  });
+
+  const videoReady = video?.proxyPath && video?.status !== "pending";
+
+  useEffect(() => {
+    if (step === 3) {
+      setFaceDetectionReady(false);
+      setTimedOut(false);
+      step3Timer.current = setTimeout(() => setTimedOut(true), 45_000);
+    }
+    return () => {
+      if (step3Timer.current) clearTimeout(step3Timer.current);
+    };
+  }, [step]);
 
   function canContinueStep1() {
     return url.trim() && !urlError;
   }
 
   function canContinueStep2() {
-    return format !== null && layout !== null;
+    if (format === null || framing === null) return false;
+    return true;
   }
 
-  const layouts = format === "vertical" ? verticalLayouts : horizontalLayouts;
+  function canContinueStep3() {
+    if (!needsAiPreview) return true;
+    if (videoReady && faceDetectionReady) return true;
+    if (timedOut) return true;
+    if (video && video.status !== "pending" && !video.proxyPath) return true;
+    return false;
+  }
+
+
+
+  async function handleNextFromStep1() {
+    if (!url.trim() || urlError) return;
+    await submitMutation.mutateAsync();
+    setStep(2);
+  }
 
   const stepContent = () => {
     switch (step) {
@@ -145,10 +192,9 @@ export function CreatePage() {
         return (
           <div className="mx-auto max-w-xl space-y-6">
             <div className="text-center">
-              <h3 className="text-lg font-bold text-white">Defina o formato do vídeo</h3>
+              <h3 className="text-lg font-bold text-white">Format & AI Detection</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Escolha se o corte será vertical (Reels, TikTok, Shorts) ou horizontal (Youtube)
-                e selecione o layout de enquadramento ideal para o seu conteúdo
+                Choose your output format and configure AI face detection
               </p>
             </div>
 
@@ -173,7 +219,7 @@ export function CreatePage() {
                   type="button"
                   onClick={() => {
                     setFormat(f.id);
-                    setLayout(null);
+                    setFraming(null);
                   }}
                   className={cn(
                     "flex flex-col items-center gap-2 rounded-xl border p-5 transition-all duration-200",
@@ -205,31 +251,39 @@ export function CreatePage() {
 
             {format && (
               <div className="space-y-3">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Layout de enquadramento
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {layouts.map((l) => (
+                <div className="flex items-center gap-2">
+                  <ScanFace className="h-5 w-5 text-accent-violet" />
+                  <span className="text-sm font-medium text-white">Enquadramento</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {framingOptions.map((o) => (
                     <button
-                      key={l.id}
+                      key={o.id}
                       type="button"
-                      onClick={() => setLayout(l.id)}
+                      onClick={() => setFraming(o.id)}
                       className={cn(
                         "rounded-lg border p-3 text-left transition-all duration-200",
-                        layout === l.id
-                          ? "border-accent-cyan bg-accent-cyan/10 ring-1 ring-accent-cyan"
-                          : "border-border bg-bg-deep hover:border-accent-cyan/30"
+                        framing === o.id
+                          ? "border-accent-violet bg-accent-violet/10 ring-1 ring-accent-violet"
+                          : "border-border bg-bg-deep hover:border-accent-violet/30"
                       )}
                     >
-                      <p
-                        className={cn(
-                          "text-sm font-medium",
-                          layout === l.id ? "text-accent-cyan" : "text-white"
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={cn(
+                            "text-sm font-medium",
+                            framing === o.id ? "text-accent-violet" : "text-white"
+                          )}
+                        >
+                          {o.label}
+                        </p>
+                        {o.badge && (
+                          <span className="rounded bg-accent-violet/20 px-1.5 py-0.5 text-[10px] font-semibold text-accent-violet">
+                            {o.badge}
+                          </span>
                         )}
-                      >
-                        {l.label}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">{l.desc}</p>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{o.desc}</p>
                     </button>
                   ))}
                 </div>
@@ -239,6 +293,86 @@ export function CreatePage() {
         );
 
       case 3:
+      {
+        const previewUnavailable = video && !video.proxyPath && video.status !== "pending";
+
+        if (!needsAiPreview) {
+          return (
+            <div className="mx-auto max-w-xl space-y-6">
+              <div className="text-center">
+                <h3 className="text-lg font-bold text-white">Preview</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Pré-visualização não necessária para este modo de enquadramento</p>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-bg-deep p-12">
+                <Eye className="h-10 w-10 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-white">Pronto para gerar</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    O enquadramento selecionado não requer preview de detecção facial.
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="mx-auto max-w-xl space-y-6">
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-white">Preview de Detecção Facial</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Verifique se a IA está detectando rostos corretamente no seu vídeo
+              </p>
+            </div>
+
+            {videoReady ? (
+              <div className="space-y-4">
+                <AiPreview
+                  videoUrl={getStreamUrl(videoId!)}
+                  mode="multiple"
+                  onReady={() => setFaceDetectionReady(true)}
+                />
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Eye className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Detectando rostos — caixas mostram as faces identificadas</span>
+                </div>
+              </div>
+            ) : previewUnavailable ? (
+              <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-bg-deep p-12">
+                <Eye className="h-10 w-10 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-white">Preview não disponível</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    O preview do vídeo não pôde ser baixado. Você pode continuar mesmo assim.
+                  </p>
+                </div>
+              </div>
+            ) : timedOut ? (
+              <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-bg-deep p-12">
+                <Eye className="h-10 w-10 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-white">Ainda carregando?</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    O preview está demorando mais que o esperado. Você pode pular e continuar.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-border bg-bg-deep p-12">
+                <Loader2 className="h-10 w-10 animate-spin text-accent-violet" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-white">Preparando preview do vídeo...</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    O vídeo está sendo baixado e processado. Geralmente leva 1-2 minutos.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      case 4:
         return (
           <div className="mx-auto max-w-xl space-y-6">
             <div className="text-center">
@@ -260,7 +394,7 @@ export function CreatePage() {
               <div className="flex items-center gap-3">
                 <Smartphone className="h-4 w-4 text-accent-cyan" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Formato</p>
+                  <p className="text-xs text-muted-foreground">Format</p>
                   <p className="text-sm font-medium text-white">
                     {format === "vertical" ? "Vertical (9:16)" : "Horizontal (16:9)"}
                   </p>
@@ -268,11 +402,11 @@ export function CreatePage() {
               </div>
               <div className="h-px bg-border" />
               <div className="flex items-center gap-3">
-                <Film className="h-4 w-4 text-accent-violet" />
+                <ScanFace className="h-4 w-4 text-accent-violet" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Layout</p>
+                  <p className="text-xs text-muted-foreground">Enquadramento</p>
                   <p className="text-sm font-medium text-white capitalize">
-                    {layout}
+                    {framingOptions.find((o) => o.id === framing)?.label || framing}
                   </p>
                 </div>
               </div>
@@ -300,7 +434,6 @@ export function CreatePage() {
       </button>
 
       {/* Step indicator */}
-      {step < 3 && (
       <div className="flex items-center justify-center gap-2">
         {STEP_LABELS.map((label, i) => {
           const stepNum = i + 1;
@@ -338,7 +471,6 @@ export function CreatePage() {
           );
         })}
       </div>
-      )}
 
       {/* Step content */}
       <div className="rounded-xl border border-border bg-surface p-8">
@@ -359,31 +491,35 @@ export function CreatePage() {
           {step === 1 ? "Cancel" : "Back"}
         </Button>
 
-        {step < 3 && (
+        {step < 4 && (
           <Button
-            onClick={() => setStep(step + 1)}
-            disabled={step === 1 ? !canContinueStep1() : !canContinueStep2()}
+            onClick={step === 1 ? handleNextFromStep1 : () => setStep(step + 1)}
+            disabled={
+              step === 1 ? !canContinueStep1() || submitMutation.isPending
+              : step === 2 ? !canContinueStep2()
+              : step === 3 ? !canContinueStep3()
+              : false
+            }
             className="gap-1.5 bg-gradient-to-r from-accent-violet to-accent-cyan text-white shadow-lg shadow-accent-violet/20 hover:shadow-accent-violet/30"
           >
-            Next
-            <ArrowRight className="h-4 w-4" />
+            {step === 3 && needsAiPreview && !faceDetectionReady && !timedOut ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : step === 1 && submitMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4" />
+            )}
+            {step === 3 && needsAiPreview && !faceDetectionReady ? (timedOut ? "Skip" : "Loading...") : step === 1 && submitMutation.isPending ? "Starting..." : "Next"}
           </Button>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <Button
-            onClick={() => submitMutation.mutate()}
-            disabled={submitMutation.isPending}
+            onClick={() => navigate(`/videos/processing/${jobId}`)}
             className="gap-1.5 bg-gradient-to-r from-accent-violet to-accent-cyan text-white shadow-lg shadow-accent-violet/20 hover:shadow-accent-violet/30"
           >
-            {submitMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                Generate Clips
-                <ArrowRight className="h-4 w-4" />
-              </>
-            )}
+            Generate Clips
+            <ArrowRight className="h-4 w-4" />
           </Button>
         )}
       </div>
