@@ -17,6 +17,8 @@ export function createS3Client(config: StorageConfig) {
       secretAccessKey: config.secretAccessKey,
     },
     forcePathStyle: true,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
 
   return { client, bucket: config.bucket };

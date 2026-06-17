@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '@clipper/db/db';
-import { clips } from '@clipper/db/schema';
-import { eq } from 'drizzle-orm';
+import { clips, renders, embeddings } from '@clipper/db/schema';
+import { eq, inArray } from 'drizzle-orm';
 
 export async function clipsRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
@@ -22,5 +22,18 @@ export async function clipsRoutes(app: FastifyInstance) {
       .returning();
     if (!clip) return reply.status(404).send({ error: 'Clip not found' });
     return clip;
+  });
+
+  app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+    const { id } = request.params;
+
+    const [clip] = await db.select().from(clips).where(eq(clips.id, id));
+    if (!clip) return reply.status(404).send({ error: 'Clip not found' });
+
+    await db.delete(renders).where(eq(renders.clipId, id));
+    await db.delete(embeddings).where(eq(embeddings.clipId, id));
+    await db.delete(clips).where(eq(clips.id, id));
+
+    return reply.status(200).send({ message: 'Clip deleted' });
   });
 }

@@ -214,6 +214,15 @@ services:
       postgres:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ..
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
   temporal-admin:
     image: temporalio/admin-tools:1.26
     depends_on:

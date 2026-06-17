@@ -20,6 +20,8 @@ FROM deps AS runner
 WORKDIR /app
 COPY --from=whisper-builder /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 RUN /usr/local/bin/whisper-cli --help > /dev/null 2>&1 && echo "whisper-cli OK"
-RUN mkdir -p /tmp/whisper-models
+RUN mkdir -p /tmp/whisper-models /tmp/clipper-transcribe
+RUN wget -q -O /tmp/whisper-models/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 COPY . .
 CMD ["npx", "tsx", "workers/speech-to-text/src/index.ts"]

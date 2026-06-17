@@ -2,8 +2,8 @@ import { createReadStream } from 'node:fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
-import { type NatsConnection, consumerOpts } from 'nats';
-import { createNatsConnection, ensureJobStream, subjectForJobType } from '@clipper/queue';
+import { type NatsConnection, type JetStreamClient, consumerOpts } from 'nats';
+import { ensureJobStream, subjectForJobType } from '@clipper/queue';
 import { createS3Client, ensureBucket, uploadStream } from '@clipper/storage';
 import { jobs, videos } from '@clipper/db/schema';
 import { JobStatus, JobType } from '@clipper/shared';
@@ -69,7 +69,7 @@ export async function startWorker(nc: NatsConnection, logger: Logger) {
 
   for await (const msg of sub as unknown as AsyncIterable<NatsMsg>) {
     try {
-      await handleMessage(msg, db, s3, bucket, logger);
+      await handleMessage(msg, db, s3, bucket, js, logger);
     } catch (err) {
       logger.error(err, 'Failed to process message');
     }
@@ -82,6 +82,7 @@ export async function handleMessage(
   db: DB,
   s3: S3,
   bucket: string,
+  js: JetStreamClient,
   logger: Logger,
 ) {
   const payload: YoutubeDownloadPayload = JSON.parse(new TextDecoder().decode(msg.data));
@@ -94,6 +95,7 @@ export async function handleMessage(
   let filePath: string | null = null;
 
   try {
+    logger.info({ cmd: `yt-dlp --dump-json ${payload.youtubeUrl}` }, 'Fetching metadata');
     const metadata = getYouTubeMetadata(payload.youtubeUrl);
 
     const [video] = await db.insert(videos).values({
@@ -135,11 +137,39 @@ export async function handleMessage(
       })
       .where(eq(jobs.id, payload.jobId));
 
+    const [sttJob] = await db.insert(jobs).values({
+      projectId: payload.projectId,
+      type: JobType.SPEECH_TO_TEXT,
+      status: 'queued',
+      payload: { videoId: video.id },
+    }).returning();
+
+    if (sttJob) {
+      const sttSubject = subjectForJobType(JobType.SPEECH_TO_TEXT);
+      await js.publish(sttSubject, new TextEncoder().encode(
+        JSON.stringify({
+          jobId: sttJob.id,
+          projectId: payload.projectId,
+          videoId: video.id,
+        }),
+      ));
+    }
+
     msg.ack();
 
     logger.info({ title: metadata.title, videoId: video.id }, 'Download complete');
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    let fullError = '';
+    if (err instanceof Error) {
+      fullError = `${err.name}: ${err.message}\n${err.stack || 'no stack'}`;
+      if ('stderr' in err) {
+        fullError += `\nSTDERR: ${(err as any).stderr}`;
+      }
+      if ('stdout' in err) {
+        fullError += `\nSTDOUT: ${(err as any).stdout}`;
+      }
+    }
 
     await db.update(jobs)
       .set({ status: JobStatus.FAILED, error: errorMessage, updatedAt: new Date() })
@@ -147,7 +177,7 @@ export async function handleMessage(
 
     msg.term();
 
-    logger.error({ error: errorMessage }, 'Download failed');
+    logger.error({ error: errorMessage, fullError }, 'Download failed');
   } finally {
     if (filePath) {
       cleanupAudio(filePath);

@@ -1,4 +1,4 @@
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, mkdirSync } from 'node:fs';
 import { readFile, unlink } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import postgres from 'postgres';
@@ -23,6 +23,10 @@ export interface SpeechToTextPayload {
   jobId: string;
   projectId: string;
   videoId: string;
+}
+
+export interface NatsJs {
+  publish: (subject: string, data: Uint8Array) => Promise<void>;
 }
 
 export interface SpeechToTextResult {
@@ -70,7 +74,7 @@ export async function startWorker(nc: NatsConnection, logger: Logger) {
 
   for await (const msg of sub as unknown as AsyncIterable<NatsMsg>) {
     try {
-      await handleMessage(msg, db, s3, bucket, logger);
+      await handleMessage(msg, db, s3, bucket, js, logger);
     } catch (err) {
       logger.error(err, 'Failed to process message');
     }
@@ -83,6 +87,7 @@ export async function handleMessage(
   db: DB,
   s3: S3,
   bucket: string,
+  js: NatsJs,
   logger: Logger,
 ) {
   const payload: SpeechToTextPayload = JSON.parse(new TextDecoder().decode(msg.data));
@@ -104,6 +109,7 @@ export async function handleMessage(
     }
 
     audioPath = `${config.DOWNLOAD_DIR}/${payload.videoId}.opus`;
+    mkdirSync(config.DOWNLOAD_DIR, { recursive: true });
 
     const response = await getObject(s3, bucket, video.audioPath);
     const bodyStream = response.Body as NodeJS.ReadableStream;
@@ -141,6 +147,24 @@ export async function handleMessage(
       .where(eq(jobs.id, payload.jobId));
 
     msg.ack();
+
+    const [analysisJob] = await db.insert(jobs).values({
+      projectId: payload.projectId,
+      type: JobType.CLIP_ANALYSIS,
+      status: 'queued',
+      payload: { videoId: payload.videoId },
+    }).returning();
+
+    if (analysisJob) {
+      const analysisSubject = subjectForJobType(JobType.CLIP_ANALYSIS);
+      await js.publish(analysisSubject, new TextEncoder().encode(
+        JSON.stringify({
+          jobId: analysisJob.id,
+          projectId: payload.projectId,
+          videoId: payload.videoId,
+        }),
+      ));
+    }
 
     logger.info(
       { videoId: payload.videoId, segments: result.segments.length, language: result.language },

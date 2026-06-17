@@ -20,25 +20,47 @@ const execOptions: ExecSyncOptions = {
   timeout: 600_000,
 };
 
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+const COMMON_FLAGS = [
+  '--no-update',
+  `--user-agent "${USER_AGENT}"`,
+  '--throttled-rate 100K',
+].join(' ');
+
 export function getYouTubeMetadata(url: string): YouTubeMetadata {
-  const output = execSync(
-    `yt-dlp --dump-json --no-download --skip-download "${url}"`,
-    { ...execOptions, encoding: 'utf-8', maxBuffer: 1024 * 1024 },
-  );
+  const cmd = `yt-dlp ${COMMON_FLAGS} --dump-json --no-download --skip-download "${url}"`;
+  try {
+    const output = execSync(
+      cmd,
+      { ...execOptions, encoding: 'utf-8', maxBuffer: 1024 * 1024 },
+    );
 
-  const data = JSON.parse(output) as {
-    id: string;
-    title: string;
-    duration: number;
-    thumbnail: string;
-  };
+    const data = JSON.parse(output) as {
+      id: string;
+      title: string;
+      duration: number;
+      thumbnail: string;
+    };
 
-  return {
-    id: data.id,
-    title: data.title,
-    duration: data.duration,
-    thumbnail: data.thumbnail,
-  };
+    return {
+      id: data.id,
+      title: data.title,
+      duration: data.duration,
+      thumbnail: data.thumbnail,
+    };
+  } catch (err) {
+    if (err instanceof Error && 'stderr' in err) {
+      const enriched = new Error(`yt-dlp failed: ${err.message}\nSTDERR: ${(err as any).stderr}\nCMD: ${cmd}`);
+      enriched.stack = err.stack;
+      throw enriched;
+    }
+    if (err instanceof Error && err.message) {
+      const enriched = new Error(`yt-dlp failed: ${err.message}\nCMD: ${cmd}`);
+      enriched.stack = err.stack;
+      throw enriched;
+    }
+    throw err;
+  }
 }
 
 export function downloadAudio(url: string, videoId: string): DownloadResult {
@@ -55,7 +77,7 @@ export function downloadAudio(url: string, videoId: string): DownloadResult {
     : '';
 
   const output = execSync(
-    `yt-dlp ` +
+    `yt-dlp ${COMMON_FLAGS} ` +
     `-f "${format}" ` +
     `${extractAudio} ` +
     `--audio-quality ${config.AUDIO_QUALITY} ` +
